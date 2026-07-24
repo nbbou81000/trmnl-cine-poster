@@ -42,15 +42,16 @@ const DECADES = {
 
 const MOVIES_PER_COMBO = 6;   // 11 genres × 7 décennies × 6 ≈ 460 films max
 const MAX_RANDOM_PAGE = 5;    // on pioche dans les 5 premières pages (top popularité)
+const OVERVIEW_MAX_LEN = 320; // tronque les résumés trop longs
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const pickRandom = (arr, n) =>
   [...arr].sort(() => Math.random() - 0.5).slice(0, n);
 
-async function discover(genreId, dateGte, dateLte, page, minVotes) {
+async function discover(genreId, dateGte, dateLte, page, minVotes, language) {
   const params = new URLSearchParams({
     api_key: API_KEY,
-    language: "fr-FR",
+    language,
     sort_by: "popularity.desc",
     include_adult: "false",
     "vote_count.gte": String(minVotes),
@@ -68,29 +69,41 @@ async function fetchCombo(genreKey, genreId, decadeKey, [gte, lte]) {
   // Films anciens = moins de votes sur TMDB → seuil abaissé
   const minVotes = decadeKey === "pre1970" ? 100 : 300;
 
-  // 1er appel pour connaître total_pages, puis page aléatoire
-  const first = await discover(genreId, gte, lte, 1, minVotes);
+  // 1er appel (FR) pour connaître total_pages, puis page aléatoire
+  const first = await discover(genreId, gte, lte, 1, minVotes, "fr-FR");
   const totalPages = Math.min(first.total_pages || 1, MAX_RANDOM_PAGE);
   const page = 1 + Math.floor(Math.random() * totalPages);
 
-  let results = first.results || [];
+  let resultsFr = first.results || [];
   if (page > 1) {
     await sleep(120);
-    const other = await discover(genreId, gte, lte, page, minVotes);
-    results = other.results || results;
+    resultsFr = (await discover(genreId, gte, lte, page, minVotes, "fr-FR")).results || resultsFr;
   }
 
-  return pickRandom(
-    results.filter((m) => m.poster_path),
+  // Même page, en anglais, pour récupérer titre + résumé EN (mêmes films, même tri)
+  await sleep(120);
+  const resultsEn = (await discover(genreId, gte, lte, page, minVotes, "en-US")).results || [];
+  const enById = new Map(resultsEn.map((m) => [m.id, m]));
+
+  const picked = pickRandom(
+    resultsFr.filter((m) => m.poster_path),
     MOVIES_PER_COMBO
-  ).map((m) => ({
-    t: m.title,
-    y: (m.release_date || "").slice(0, 4),
-    p: m.poster_path,
-    r: Math.round(m.vote_average * 10) / 10,
-    g: genreKey,
-    d: decadeKey,
-  }));
+  );
+
+  return picked.map((m) => {
+    const en = enById.get(m.id) || {};
+    return {
+      t_fr: m.title,
+      t_en: en.title || m.title,
+      o_fr: (m.overview || "").slice(0, OVERVIEW_MAX_LEN),
+      o_en: (en.overview || m.overview || "").slice(0, OVERVIEW_MAX_LEN),
+      y: (m.release_date || "").slice(0, 4),
+      p: m.poster_path,
+      r: Math.round(m.vote_average * 10) / 10,
+      g: genreKey,
+      d: decadeKey,
+    };
+  });
 }
 
 async function main() {
