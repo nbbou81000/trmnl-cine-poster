@@ -44,7 +44,7 @@ const DECADES = {
   d2020: ["2020-01-01", "2029-12-31"],
 };
 
-const MOVIES_PER_COMBO = 3;   // 11 genres × 7 décennies × 3 ≈ 230 films par langue
+const MOVIES_PER_COMBO = 2;   // 11 genres × 7 décennies × 2 ≈ 154 films par langue → marge pour casting/réalisateur
 const MAX_RANDOM_PAGE = 5;    // on pioche dans les 5 premières pages (top popularité)
 const OVERVIEW_MAX_LEN = 350; // rarement atteint (la plupart des résumés TMDB sont plus courts) → coupe au mot le plus proche + "…"
 
@@ -77,6 +77,26 @@ async function discover(genreId, dateGte, dateLte, page, minVotes, language) {
   return res.json();
 }
 
+// Réalisateur + durée + casting : noms propres, identiques quelle que soit la langue
+async function fetchCredits(movieId) {
+  const params = new URLSearchParams({
+    api_key: API_KEY,
+    language: "en-US",
+    append_to_response: "credits",
+  });
+  const res = await fetch(`https://api.themoviedb.org/3/movie/${movieId}?${params}`);
+  if (!res.ok) throw new Error(`TMDB details ${res.status}`);
+  const data = await res.json();
+  const crew = data.credits?.crew || [];
+  const cast = data.credits?.cast || [];
+  const director = crew.find((c) => c.job === "Director");
+  return {
+    runtime: data.runtime || null,
+    director: director ? director.name : "",
+    cast: cast.slice(0, 3).map((c) => c.name),
+  };
+}
+
 async function fetchCombo(genreKey, genreId, decadeKey, [gte, lte]) {
   // Films anciens = moins de votes sur TMDB → seuil abaissé
   const minVotes = decadeKey === "pre1970" ? 100 : 300;
@@ -103,20 +123,36 @@ async function fetchCombo(genreKey, genreId, decadeKey, [gte, lte]) {
   );
 
   // Retourne une paire {fr, en} par film sélectionné, mêmes métadonnées communes
-  return picked.map((m) => {
+  const output = [];
+  for (const m of picked) {
     const en = enById.get(m.id) || {};
+
+    let credits = { runtime: null, director: "", cast: [] };
+    try {
+      await sleep(120);
+      credits = await fetchCredits(m.id);
+    } catch (e) {
+      console.warn(`  ⚠ credits ${m.id} (${m.title}) : ${e.message}`);
+    }
+
     const common = {
+      id: m.id,
       y: (m.release_date || "").slice(0, 4),
       p: m.poster_path,
       r: Math.round(m.vote_average * 10) / 10,
       g: genreKey,
       d: decadeKey,
+      runtime: credits.runtime,
+      director: credits.director,
+      cast: credits.cast,
     };
-    return {
+
+    output.push({
       fr: { t: m.title, o: truncateAtWord(m.overview || "", OVERVIEW_MAX_LEN), ...common },
       en: { t: en.title || m.title, o: truncateAtWord(en.overview || m.overview || "", OVERVIEW_MAX_LEN), ...common },
-    };
-  });
+    });
+  }
+  return output;
 }
 
 async function main() {
