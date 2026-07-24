@@ -1,7 +1,11 @@
 // ============================================================
 // Ciné Poster — fetch-movies.js
 // Tire un pool aléatoire de films TMDB par genre × décennie,
-// et publie data.json (servi par GitHub Pages).
+// et publie DEUX fichiers (un par langue) sur GitHub Pages :
+//   data-fr.json / data-en.json
+// Le Polling URL de TRMNL est dynamique ({{ language }}), donc
+// chaque fichier ne contient qu'une langue → deux fois moins
+// lourd à contenu égal → résumés complets sans dépasser 100 Ko.
 // Relancé chaque jour par GitHub Actions → le pool change 1×/jour.
 // ============================================================
 
@@ -40,13 +44,21 @@ const DECADES = {
   d2020: ["2020-01-01", "2029-12-31"],
 };
 
-const MOVIES_PER_COMBO = 2;   // 11 genres × 7 décennies × 2 ≈ 154 films → marge confortable sous 100 Ko
+const MOVIES_PER_COMBO = 3;   // 11 genres × 7 décennies × 3 ≈ 230 films par langue
 const MAX_RANDOM_PAGE = 5;    // on pioche dans les 5 premières pages (top popularité)
-const OVERVIEW_MAX_LEN = 130; // résumés courts (bilingues → poids x2, + accents UTF-8 = 2 octets)
+const OVERVIEW_MAX_LEN = 350; // rarement atteint (la plupart des résumés TMDB sont plus courts) → coupe au mot le plus proche + "…"
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const pickRandom = (arr, n) =>
   [...arr].sort(() => Math.random() - 0.5).slice(0, n);
+
+function truncateAtWord(str, max) {
+  if (!str) return "";
+  if (str.length <= max) return str;
+  const cut = str.slice(0, max);
+  const lastSpace = cut.lastIndexOf(" ");
+  return (lastSpace > 0 ? cut.slice(0, lastSpace) : cut) + "…";
+}
 
 async function discover(genreId, dateGte, dateLte, page, minVotes, language) {
   const params = new URLSearchParams({
@@ -90,29 +102,35 @@ async function fetchCombo(genreKey, genreId, decadeKey, [gte, lte]) {
     MOVIES_PER_COMBO
   );
 
+  // Retourne une paire {fr, en} par film sélectionné, mêmes métadonnées communes
   return picked.map((m) => {
     const en = enById.get(m.id) || {};
-    return {
-      t_fr: m.title,
-      t_en: en.title || m.title,
-      o_fr: (m.overview || "").slice(0, OVERVIEW_MAX_LEN),
-      o_en: (en.overview || m.overview || "").slice(0, OVERVIEW_MAX_LEN),
+    const common = {
       y: (m.release_date || "").slice(0, 4),
       p: m.poster_path,
       r: Math.round(m.vote_average * 10) / 10,
       g: genreKey,
       d: decadeKey,
     };
+    return {
+      fr: { t: m.title, o: truncateAtWord(m.overview || "", OVERVIEW_MAX_LEN), ...common },
+      en: { t: en.title || m.title, o: truncateAtWord(en.overview || m.overview || "", OVERVIEW_MAX_LEN), ...common },
+    };
   });
 }
 
 async function main() {
-  const movies = [];
+  const moviesFr = [];
+  const moviesEn = [];
+
   for (const [genreKey, genreId] of Object.entries(GENRES)) {
     for (const [decadeKey, range] of Object.entries(DECADES)) {
       try {
         const batch = await fetchCombo(genreKey, genreId, decadeKey, range);
-        movies.push(...batch);
+        for (const pair of batch) {
+          moviesFr.push(pair.fr);
+          moviesEn.push(pair.en);
+        }
         console.log(`✓ ${genreKey} / ${decadeKey} : ${batch.length} films`);
       } catch (e) {
         console.warn(`⚠ ${genreKey} / ${decadeKey} : ${e.message}`);
@@ -121,21 +139,20 @@ async function main() {
     }
   }
 
-  const payload = {
-    updated: new Date().toISOString(),
-    count: movies.length,
-    movies,
-  };
+  const now = new Date().toISOString();
 
-  const json = JSON.stringify(payload);
-  const sizeKb = json.length / 1024;
+  for (const [lang, movies] of [["fr", moviesFr], ["en", moviesEn]]) {
+    const payload = { updated: now, count: movies.length, movies };
+    const json = JSON.stringify(payload);
+    const sizeKb = json.length / 1024;
 
-  writeFileSync("data.json", json);
-  console.log(`\n✅ data.json généré : ${movies.length} films (${sizeKb.toFixed(1)} Ko)`);
+    writeFileSync(`data-${lang}.json`, json);
+    console.log(`✅ data-${lang}.json généré : ${movies.length} films (${sizeKb.toFixed(1)} Ko)`);
 
-  if (sizeKb > 80) {
-    console.warn(`⚠️  Attention : ${sizeKb.toFixed(1)} Ko approche la limite TRMNL de 100 Ko.`);
-    console.warn(`   Réduis MOVIES_PER_COMBO ou OVERVIEW_MAX_LEN si le plugin passe en état dégradé.`);
+    if (sizeKb > 80) {
+      console.warn(`⚠️  data-${lang}.json : ${sizeKb.toFixed(1)} Ko approche la limite TRMNL de 100 Ko.`);
+      console.warn(`   Réduis MOVIES_PER_COMBO ou OVERVIEW_MAX_LEN si le plugin passe en état dégradé.`);
+    }
   }
 }
 
