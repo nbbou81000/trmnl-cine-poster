@@ -40,9 +40,9 @@ const DECADES = {
   d2020: ["2020-01-01", "2029-12-31"],
 };
 
-const MOVIES_PER_COMBO = 6;   // 11 genres × 7 décennies × 6 ≈ 460 films max
+const MOVIES_PER_COMBO = 2;   // 11 genres × 7 décennies × 2 ≈ 154 films → marge confortable sous 100 Ko
 const MAX_RANDOM_PAGE = 5;    // on pioche dans les 5 premières pages (top popularité)
-const OVERVIEW_MAX_LEN = 320; // tronque les résumés trop longs
+const OVERVIEW_MAX_LEN = 130; // résumés courts (bilingues → poids x2, + accents UTF-8 = 2 octets)
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const pickRandom = (arr, n) =>
@@ -127,8 +127,16 @@ async function main() {
     movies,
   };
 
-  writeFileSync("data.json", JSON.stringify(payload));
-  console.log(`\n✅ data.json généré : ${movies.length} films (${(JSON.stringify(payload).length / 1024).toFixed(0)} Ko)`);
+  const json = JSON.stringify(payload);
+  const sizeKb = json.length / 1024;
+
+  writeFileSync("data.json", json);
+  console.log(`\n✅ data.json généré : ${movies.length} films (${sizeKb.toFixed(1)} Ko)`);
+
+  if (sizeKb > 80) {
+    console.warn(`⚠️  Attention : ${sizeKb.toFixed(1)} Ko approche la limite TRMNL de 100 Ko.`);
+    console.warn(`   Réduis MOVIES_PER_COMBO ou OVERVIEW_MAX_LEN si le plugin passe en état dégradé.`);
+  }
 }
 
 main();
