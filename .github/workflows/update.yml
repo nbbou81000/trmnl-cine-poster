@@ -23,10 +23,10 @@ jobs:
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
         run: node src/fetch-movies.js
 
-      - name: Commit data.json
+      - name: Commit data files
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data.json
+          git add data-fr.json data-en.json
           git diff --cached --quiet || git commit -m "🎬 Pool du $(date -u +%F) [skip ci]"
           git push
