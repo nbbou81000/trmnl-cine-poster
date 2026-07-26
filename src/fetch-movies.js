@@ -138,7 +138,6 @@ async function fetchCombo(genreKey, genreId, decadeKey, [gte, lte]) {
     const common = {
       id: m.id,
       y: (m.release_date || "").slice(0, 4),
-      p: m.poster_path,
       r: Math.round(m.vote_average * 10) / 10,
       g: genreKey,
       d: decadeKey,
@@ -148,8 +147,8 @@ async function fetchCombo(genreKey, genreId, decadeKey, [gte, lte]) {
     };
 
     output.push({
-      fr: { t: m.title, o: truncateAtWord(m.overview || "", OVERVIEW_MAX_LEN), ...common },
-      en: { t: en.title || m.title, o: truncateAtWord(en.overview || m.overview || "", OVERVIEW_MAX_LEN), ...common },
+      fr: { t: m.title, o: truncateAtWord(m.overview || "", OVERVIEW_MAX_LEN), p: m.poster_path || en.poster_path, ...common },
+      en: { t: en.title || m.title, o: truncateAtWord(en.overview || m.overview || "", OVERVIEW_MAX_LEN), p: en.poster_path || m.poster_path, ...common },
     });
   }
   return output;
