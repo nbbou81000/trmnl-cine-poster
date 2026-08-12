@@ -45,7 +45,7 @@ const DECADES = {
 };
 
 const MOVIES_PER_COMBO = 2;   // 11 genres × 7 décennies × 2 ≈ 154 films par langue → marge pour casting/réalisateur
-const MAX_RANDOM_PAGE = 5;    // on pioche dans les 5 premières pages (top popularité)
+const MAX_RANDOM_PAGE = 10;    // on pioche dans les 5 premières pages (top popularité)
 const OVERVIEW_MAX_LEN = 350; // rarement atteint (la plupart des résumés TMDB sont plus courts) → coupe au mot le plus proche + "…"
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
